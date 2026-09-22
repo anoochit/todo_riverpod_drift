@@ -1,0 +1,42 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
+    - "**/*.g.dart"
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+  errors:
+    invalid_assignment: warning
+    missing_return: error
+    dead_code: warning
+
+linter:
+  rules:
+    always_declare_return_types: true
+    avoid_dynamic_calls: true
+    avoid_print: true
+    avoid_unnecessary_containers: true
+    collect_whitespace: false
+    prefer_const_constructors: true
+    prefer_const_declarations: true
+    prefer_final_locals: true
+    prefer_is_empty: true
+    require_trailing_commas: true
+    use_super_parameters: true
+    unnecessary_const: true
+    unnecessary_lambdas: true
+    sized_box_for_whitespace: true
+    sort_child_properties_last: true
+
+formatter:
+  page_width: 80
+  trailing_commas: automate
