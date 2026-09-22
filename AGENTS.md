@@ -30,6 +30,7 @@ dart run build_runner build --delete-conflicting-outputs
 ```
 
 Generated files (never edit manually):
+
 - `lib/database/app_database.g.dart`
 - `lib/providers/database_provider.g.dart`
 - `lib/providers/settings_provider.g.dart`
@@ -39,7 +40,7 @@ Generated files (never edit manually):
 ### Layers
 
 | Layer | Location | Responsibility |
-|-------|----------|----------------|
+| ------- | ---------- | ---------------- |
 | UI | `lib/screens/`, `lib/widgets/` | Widgets, layout, user interaction |
 | Providers | `lib/providers/` | State management, business logic |
 | Data | `lib/database/`, `lib/providers/database_provider.dart` | Database, persistence |
@@ -68,7 +69,7 @@ Generated files (never edit manually):
 ## Dependencies
 
 | Package | Purpose |
-|---------|---------|
+| --------- | --------- |
 | `flutter_riverpod` | State management |
 | `riverpod_annotation` | Riverpod code generation |
 | `go_router` | Declarative routing |
