@@ -1,7 +1,6 @@
 # Building a Todo App with Flutter, Riverpod, GoRouter, and Drift
 
-A complete step-by-step tutorial to build a production-quality todo app with local
-SQLite persistence, declarative routing, and theme switching.
+A complete step-by-step tutorial to build a production-quality todo app with local SQLite persistence, declarative routing, state management, and theme switching.
 
 ---
 
@@ -15,6 +14,7 @@ A todo application with:
 - **State management** — Riverpod with code generation
 - **Theme switching** — Light / dark / system theme, persisted with SharedPreferences
 - **Material 3** — Modern Material Design with dynamic color
+- **Cross-platform** — Works on Android, iOS, Web, Windows, macOS, Linux
 
 ---
 
@@ -30,24 +30,31 @@ A todo application with:
 
 ```
 lib/
-├── main.dart
+├── main.dart                          # App entry point
 ├── database/
-│   ├── app_database.dart
-│   └── app_database.g.dart          (generated)
+│   ├── app_database.dart              # Drift table definitions & DB class
+│   └── app_database.g.dart            # Generated Drift code
 ├── providers/
-│   ├── database_provider.dart
-│   ├── database_provider.g.dart     (generated)
-│   ├── settings_provider.dart
-│   ├── settings_provider.g.dart     (generated)
-│   └── todo_provider.dart
+│   ├── database_provider.dart         # Riverpod provider for database
+│   ├── database_provider.g.dart       # Generated code
+│   ├── settings_provider.dart         # Theme mode persistence
+│   ├── settings_provider.g.dart       # Generated code
+│   └── todo_provider.dart             # Todo CRUD operations
 ├── router/
-│   └── app_router.dart
+│   └── app_router.dart                # GoRouter configuration
 ├── screens/
-│   ├── add_edit_todo_screen.dart
-│   ├── settings_screen.dart
-│   └── todo_list_screen.dart
+│   ├── add_edit_todo_screen.dart      # Add/edit todo form
+│   ├── settings_screen.dart           # Theme settings
+│   └── todo_list_screen.dart          # Main todo list
 └── widgets/
-    └── todo_tile.dart
+    └── todo_tile.dart                 # Individual todo item widget
+
+web/
+├── sqlite3.wasm                       # SQLite WebAssembly for web support
+└── drift_worker.js                    # Drift web worker
+
+analysis_options.yaml                  # Linter and analyzer config
+build.yaml                             # Code generation config
 ```
 
 ---
@@ -120,15 +127,15 @@ flutter pub get
 
 | Package | Purpose |
 |---------|---------|
-| `flutter_riverpod` | Reactive state management |
-| `riverpod_annotation` | Annotations for Riverpod code generation |
-| `go_router` | Declarative URL-based routing |
-| `drift` | Type-safe SQLite ORM for Dart |
-| `drift_flutter` | Flutter integration for Drift |
-| `shared_preferences` | Key-value storage for persisting settings |
-| `build_runner` | Runs code generators |
-| `drift_dev` | Drift code generator |
-| `riverpod_generator` | Riverpod code generator |
+| `flutter_riverpod` | Reactive state management — providers replace setState, InheritedWidget, BLoC |
+| `riverpod_annotation` | Annotations (`@riverpod`) for automatic code generation |
+| `go_router` | Declarative URL-based routing — route table, path params, deep links |
+| `drift` | Type-safe SQLite ORM — compile-time checked queries, reactive streams |
+| `drift_flutter` | Flutter integration for Drift — handles platform-specific database connections |
+| `shared_preferences` | Key-value storage — used to persist theme preference |
+| `build_runner` | Runs code generators — produces `*.g.dart` files |
+| `drift_dev` | Drift code generator — generates table classes, query builders, data classes |
+| `riverpod_generator` | Riverpod code generator — generates provider classes from annotations |
 
 ---
 
@@ -181,11 +188,33 @@ formatter:
   trailing_commas: automate
 ```
 
-This enables strict type checking, recommended lint rules, and auto-trailing-commas.
+### Why strict mode?
+
+- **`strict-casts: true`** — Prevents implicit downcasts from `dynamic` to specific types
+- **`strict-inference: true`** — Forces explicit type annotations where inference is ambiguous
+- **`strict-raw-types: true`** — Ensures generic types are always specified
 
 ---
 
-## Step 4 — Define the Database (Drift)
+## Step 4 — Configure Code Generation
+
+Create `build.yaml` at the project root:
+
+```yaml
+targets:
+  $default:
+    builders:
+      drift_dev:
+        enabled: true
+      riverpod_generator:
+        enabled: true
+```
+
+This tells `build_runner` to run both Drift and Riverpod generators.
+
+---
+
+## Step 5 — Define the Database Schema (Drift)
 
 Create `lib/database/app_database.dart`:
 
@@ -215,7 +244,14 @@ class AppDatabase extends _$AppDatabase {
   int get schemaVersion => 1;
 
   static QueryExecutor _openConnection() {
-    return driftDatabase(name: 'todo_database');
+    return driftDatabase(
+      name: 'todo_database',
+      native: const DriftNativeOptions(),
+      web: DriftWebOptions(
+        sqlite3Wasm: Uri.parse('sqlite3.wasm'),
+        driftWorker: Uri.parse('drift_worker.js'),
+      ),
+    );
   }
 
   Future<List<Todo>> allTodos() => select(todos).get();
@@ -239,19 +275,36 @@ class AppDatabase extends _$AppDatabase {
 }
 ```
 
-### How this works
+### How Drift works
 
-- **`Todos`** defines the table schema — columns, types, defaults, and constraints.
-- **`_$AppDatabase`** is generated by `drift_dev` into `app_database.g.dart`.
-- **CRUD methods** use Drift's type-safe query builder:
-  - `select(todos).watch()` returns a `Stream<List<Todo>>` that auto-updates on data changes.
-  - `into(todos).insert(todo)` inserts a row.
-  - `update(todos).replace(todo)` updates a row by primary key.
-  - `delete(todos)..where(...)` deletes matching rows.
+- **`Todos extends Table`** — Defines the table schema. Each column is declared with a type and constraints.
+- **`part 'app_database.g.dart'`** — Links to the generated file. Never edit `.g.dart` files manually.
+- **`_$AppDatabase`** — Generated base class containing table definitions, query builders, and data classes.
+- **`_openConnection()`** — Returns a `QueryExecutor` — the database connection. Configured for both native (SQLite) and web (WASM + IndexedDB).
+
+### Column types used
+
+| Column | Dart Type | SQL Type | Notes |
+|--------|-----------|----------|-------|
+| `id` | `int` | INTEGER | Auto-increment primary key |
+| `title` | `String` | TEXT | Required, 1–200 chars |
+| `description` | `String?` | TEXT | Nullable |
+| `isCompleted` | `bool` | BOOLEAN | Default: `false` |
+| `createdAt` | `DateTime` | DATETIME | Default: server time |
+| `updatedAt` | `DateTime` | DATETIME | Default: server time |
+
+### Query patterns
+
+- **`select(todos).get()`** — One-shot fetch, returns `Future<List<Todo>>`
+- **`select(todos).watch()`** — Reactive stream, returns `Stream<List<Todo>>` that emits on any table change
+- **`into(todos).insert(companion)`** — Insert a row
+- **`update(todos).replace(companion)`** — Update a row by primary key
+- **`update(todos)..where(...).write(companion)`** — Partial update (only specified columns)
+- **`delete(todos)..where(...)`** — Delete matching rows
 
 ---
 
-## Step 5 — Create the Database Provider
+## Step 6 — Create the Database Provider
 
 Create `lib/providers/database_provider.dart`:
 
@@ -270,14 +323,15 @@ AppDatabase appDatabase(Ref ref) {
 }
 ```
 
-### Key points
+### Key decisions
 
-- `@Riverpod(keepAlive: true)` — The database is a singleton that lives for the app's lifetime.
-- `ref.onDispose(database.close)` — Automatically closes the database connection when the provider is disposed.
+- **`@Riverpod(keepAlive: true)`** — The database is a singleton. Without `keepAlive`, Riverpod would dispose it when no widgets are watching it, which is wrong for a database connection.
+- **`ref.onDispose(database.close)`** — Automatically closes the database when the provider is disposed (e.g., when the app shuts down).
+- **Code generation** — `riverpod_generator` produces `appDatabaseProvider` in `database_provider.g.dart` with proper type safety and disposal tracking.
 
 ---
 
-## Step 6 — Create the Todo Provider
+## Step 7 — Create the Todo Provider
 
 Create `lib/providers/todo_provider.dart`:
 
@@ -288,7 +342,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/app_database.dart';
 import 'database_provider.dart';
 
-/// Streams the full list of todos. UI watches this for real-time updates.
+/// Streams the full list of todos.
+/// UI watches this for real-time updates.
 final todoListProvider = StreamProvider<List<Todo>>((ref) {
   final database = ref.watch(appDatabaseProvider);
   return database.watchAllTodos();
@@ -321,9 +376,10 @@ class TodoActions {
     required String title,
     String? description,
   }) async {
-    await _database.updateTodo(
+    await (_database.update(_database.todos)
+          ..where((t) => t.id.equals(id)))
+        .write(
       TodosCompanion(
-        id: Value(id),
         title: Value(title),
         description: Value(description),
         updatedAt: Value(DateTime.now()),
@@ -333,9 +389,10 @@ class TodoActions {
 
   Future<void> toggleCompleted(int id) async {
     final todo = await _database.getTodoById(id);
-    await _database.updateTodo(
+    await (_database.update(_database.todos)
+          ..where((t) => t.id.equals(id)))
+        .write(
       TodosCompanion(
-        id: Value(id),
         isCompleted: Value(!todo.isCompleted),
         updatedAt: Value(DateTime.now()),
       ),
@@ -359,13 +416,52 @@ final todoActionsProvider = Provider<TodoActions>((ref) {
 
 ### Architecture decisions
 
-- **`todoListProvider`** is a `StreamProvider` — the UI gets real-time updates whenever the database changes.
-- **`TodoActions`** is a plain class, not a Notifier — it performs side effects (writes) that don't need to be stored as state. The stream (`todoListProvider`) is the source of truth for the list.
-- **`ref.read()`** (not `ref.watch()`) is used inside `TodoActions` — we only need the database instance once per operation, not a reactive dependency.
+**Why `StreamProvider` for reading?**
+
+```dart
+final todoListProvider = StreamProvider<List<Todo>>((ref) {
+  final database = ref.watch(appDatabaseProvider);
+  return database.watchAllTodos();
+});
+```
+
+- `ref.watch(appDatabaseProvider)` — If the database changes, this provider rebuilds.
+- `database.watchAllTodos()` — Returns a `Stream<List<Todo>>`. Drift automatically emits a new list whenever any row in the `Todos` table changes.
+- The UI gets real-time updates without manually calling `setState` or `notifyListeners`.
+
+**Why a plain class for writing?**
+
+```dart
+class TodoActions {
+  TodoActions(this._ref);
+  final Ref _ref;
+  // ...
+}
+```
+
+- `TodoActions` performs side effects (database writes) that don't need to be stored as state.
+- The stream (`todoListProvider`) is the source of truth — when a write happens, the stream emits a new value, and the UI rebuilds.
+- This avoids the complexity of `AsyncNotifier` or `StateNotifier` for simple CRUD operations.
+
+**Why `write()` instead of `replace()` for updates?**
+
+```dart
+await (_database.update(_database.todos)
+      ..where((t) => t.id.equals(id)))
+    .write(
+  TodosCompanion(
+    isCompleted: Value(!todo.isCompleted),
+    updatedAt: Value(DateTime.now()),
+  ),
+);
+```
+
+- `replace()` requires **all non-nullable columns** to be present in the `TodosCompanion`.
+- `write()` only updates the columns you specify — much more efficient and less error-prone.
 
 ---
 
-## Step 7 — Create the Settings Provider (with Persistence)
+## Step 8 — Create the Settings Provider (with Persistence)
 
 Create `lib/providers/settings_provider.dart`:
 
@@ -402,13 +498,18 @@ final sharedPreferencesProvider = Provider<SharedPreferences>(
 
 ### How persistence works
 
-- `sharedPreferencesProvider` is a placeholder provider — it gets **overridden** in `main.dart` with a real `SharedPreferences` instance after async initialization.
-- `ThemeModeState.build()` reads the saved theme index from `SharedPreferences` on startup.
-- `setThemeMode()` writes the new value to `SharedPreferences` **and** updates Riverpod state, so the UI rebuilds immediately.
+1. **`sharedPreferencesProvider`** is a placeholder — it throws `UnimplementedError` if used directly. It gets **overridden** in `main.dart` with a real `SharedPreferences` instance after async initialization.
+2. **`ThemeModeState.build()`** reads the saved theme index from `SharedPreferences` on startup.
+3. **`setThemeMode()`** writes the new value to `SharedPreferences` **and** updates Riverpod state, so the UI rebuilds immediately.
+
+### Why `ref.watch` vs `ref.read`?
+
+- **`ref.watch(sharedPreferencesProvider)`** in `build()` — creates a dependency on the prefs provider. If prefs change, this notifier rebuilds.
+- **`ref.read(sharedPreferencesProvider)`** in `setThemeMode()` — one-shot access for writing. We don't want a reactive dependency here.
 
 ---
 
-## Step 8 — Set Up Routing (GoRouter)
+## Step 9 — Set Up Routing (GoRouter)
 
 Create `lib/router/app_router.dart`:
 
@@ -457,20 +558,41 @@ final routerProvider = Provider<GoRouter>((ref) {
 
 ### Route table
 
-| Path | Name | Screen | Notes |
-|------|------|--------|-------|
+| Path | Name | Screen | Purpose |
+|------|------|--------|---------|
 | `/` | `todoList` | `TodoListScreen` | Home — list of all todos |
 | `/add` | `addTodo` | `AddEditTodoScreen` | Create a new todo |
 | `/edit/:id` | `editTodo` | `AddEditTodoScreen` | Edit existing todo (by ID) |
 | `/settings` | `settings` | `SettingsScreen` | Theme preferences |
 
-### Safety
+### Why `int.tryParse` instead of `int.parse`?
 
-`int.tryParse` is used instead of `int.parse` to prevent crashes if a user navigates to `/edit/abc` with a non-numeric ID — it gracefully redirects to the home screen.
+```dart
+final id = int.tryParse(state.pathParameters['id'] ?? '');
+if (id == null) {
+  return const TodoListScreen();
+}
+```
+
+- `int.parse` throws `FormatException` on invalid input (e.g., `/edit/abc`).
+- `int.tryParse` returns `null` on invalid input — we redirect to the home screen gracefully.
+
+### How navigation works
+
+```dart
+// Push a new route
+context.push('/add');
+
+// Push with a path parameter
+context.push('/edit/${todo.id}');
+
+// Pop back to previous route
+context.pop();
+```
 
 ---
 
-## Step 9 — Create the Todo List Screen
+## Step 10 — Create the Todo List Screen
 
 Create `lib/screens/todo_list_screen.dart`:
 
@@ -540,15 +662,31 @@ class TodoListScreen extends ConsumerWidget {
 }
 ```
 
-### How it works
+### How async data is handled
 
-- `ref.watch(todoListProvider)` subscribes to the stream — the list rebuilds automatically when any todo is added, updated, or deleted.
-- `todoAsync.when(...)` handles the three async states: loading, error, and data.
-- Each `TodoTile` receives callbacks — the screen owns the business logic, the tile is purely visual.
+```dart
+final todoAsync = ref.watch(todoListProvider);
+
+todoAsync.when(
+  loading: () => CircularProgressIndicator(),
+  error: (error, stack) => Text('Error: $error'),
+  data: (todos) => ListView(...),
+);
+```
+
+- `ref.watch(todoListProvider)` returns an `AsyncValue<List<Todo>>`.
+- `.when()` handles the three possible states: loading, error, or data.
+- When the database emits a new list (after any add/edit/delete), `todoAsync` updates and the UI rebuilds automatically.
+
+### Why `ConsumerWidget`?
+
+- `ConsumerWidget` gives access to `WidgetRef` in the `build` method.
+- We need `ref.watch(todoListProvider)` to subscribe to the stream.
+- We need `ref.read(todoActionsProvider)` to call CRUD operations.
 
 ---
 
-## Step 10 — Create the Add/Edit Screen
+## Step 11 — Create the Add/Edit Screen
 
 Create `lib/screens/add_edit_todo_screen.dart`:
 
@@ -710,14 +848,49 @@ class _AddEditTodoScreenState extends ConsumerState<AddEditTodoScreen> {
 
 ### Key patterns
 
-- **`ConsumerStatefulWidget`** — needed because we use `ref` in `initState` (to load the todo) and in `_saveTodo`.
-- **`mounted` checks** — before calling `context.pop()` or `ScaffoldMessenger`, we verify the widget is still in the tree to avoid runtime errors.
-- **Form validation** — `TextFormField.validator` ensures the title is not empty.
-- **Loading state** — `_isLoading` disables the button and shows a spinner while saving.
+**`ConsumerStatefulWidget` vs `StatefulWidget`**
+
+```dart
+class AddEditTodoScreen extends ConsumerStatefulWidget {
+// ...
+class _AddEditTodoScreenState extends ConsumerState<AddEditTodoScreen> {
+```
+
+- We need `ConsumerStatefulWidget` because we use `ref` in `initState` (to load the todo) and in `_saveTodo`.
+- Regular `StatefulWidget` doesn't have access to `ref`.
+
+**`mounted` checks before async operations**
+
+```dart
+if (mounted) {
+  ScaffoldMessenger.of(context).showSnackBar(...);
+  context.pop();
+}
+```
+
+- After an `await`, the widget may have been disposed (e.g., user navigated away).
+- Calling `context.pop()` or `ScaffoldMessenger.of(context)` on a disposed widget throws.
+- Always check `mounted` before using `context` after async gaps.
+
+**Form validation**
+
+```dart
+TextFormField(
+  validator: (value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter a title';
+    }
+    return null;
+  },
+);
+```
+
+- `TextFormField` validates on submit and when `FormState.validate()` is called.
+- Return `null` for valid input, or an error message string.
 
 ---
 
-## Step 11 — Create the Settings Screen
+## Step 12 — Create the Settings Screen
 
 Create `lib/screens/settings_screen.dart`:
 
@@ -804,15 +977,29 @@ class SettingsScreen extends ConsumerWidget {
 }
 ```
 
-### How it works
+### How theme switching works
 
-- `RadioGroup<ThemeMode>` is a Material 3 widget that manages radio button state.
-- When the user selects a theme, `ref.read(themeModeStateProvider.notifier).setThemeMode(mode)` persists it to `SharedPreferences` and updates the Riverpod state.
-- `main.dart` watches `themeModeStateProvider` and passes the value to `MaterialApp.router(themeMode: ...)`.
+```dart
+RadioGroup<ThemeMode>(
+  groupValue: themeMode,
+  onChanged: (mode) {
+    if (mode != null) {
+      ref.read(themeModeStateProvider.notifier).setThemeMode(mode);
+    }
+  },
+);
+```
+
+1. User taps a radio button.
+2. `setThemeMode(mode)` is called on the notifier.
+3. The notifier writes the new index to `SharedPreferences`.
+4. The notifier updates `state = mode`.
+5. `main.dart` watches `themeModeStateProvider` and passes the value to `MaterialApp.router(themeMode: ...)`.
+6. The app rebuilds with the new theme.
 
 ---
 
-## Step 12 — Create the Todo Tile Widget
+## Step 13 — Create the Todo Tile Widget
 
 Create `lib/widgets/todo_tile.dart`:
 
@@ -911,13 +1098,14 @@ class TodoTile extends StatelessWidget {
 
 ### Design decisions
 
-- **StatelessWidget** — `TodoTile` has no internal state. All data comes from the `todo` parameter, and all actions go through callbacks. This makes it easy to test and reuse.
+- **StatelessWidget** — `TodoTile` has no internal state. All data comes from `todo`, all actions go through callbacks. Easy to test, easy to reuse.
 - **Strikethrough style** — completed todos get `TextDecoration.lineThrough` and grey color.
-- **Delete confirmation** — a dialog prevents accidental deletions.
+- **Delete confirmation** — prevents accidental deletions with an `AlertDialog`.
+- **`showDialog<void>`** — explicit type argument satisfies strict analysis.
 
 ---
 
-## Step 13 — Wire Everything Together (main.dart)
+## Step 14 — Wire Everything Together (main.dart)
 
 Replace `lib/main.dart` with:
 
@@ -931,6 +1119,9 @@ import 'router/app_router.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Defer plugin initialization until after the first frame
+  // to avoid the "lifecycle channel discarded" warning.
+  await Future<void>.delayed(Duration.zero);
   final prefs = await SharedPreferences.getInstance();
 
   runApp(
@@ -971,18 +1162,62 @@ class TodoApp extends ConsumerWidget {
 }
 ```
 
-### What happens at startup
+### Startup sequence
 
-1. `WidgetsFlutterBinding.ensureInitialized()` — required before calling async code in `main()`.
-2. `SharedPreferences.getInstance()` — initializes the local storage.
-3. `ProviderScope(overrides: [...])` — injects the real `SharedPreferences` instance into the Riverpod tree, replacing the placeholder.
-4. `TodoApp` watches `routerProvider` and `themeModeStateProvider` — the app rebuilds when the theme changes.
+```
+main() async
+  │
+  ├─ WidgetsFlutterBinding.ensureInitialized()
+  │     Required before calling async code in main()
+  │
+  ├─ await Future.delayed(Duration.zero)
+  │     Defers to next microtask, gives framework time to
+  │     register lifecycle listeners (avoids channel warning)
+  │
+  ├─ SharedPreferences.getInstance()
+  │     Initializes local key-value storage
+  │
+  ├─ ProviderScope(overrides: [...])
+  │     Injects real SharedPreferences into the Riverpod tree,
+  │     replacing the placeholder that throws UnimplementedError
+  │
+  └─ TodoApp
+       ├─ ref.watch(routerProvider) → GoRouter instance
+       └─ ref.watch(themeModeStateProvider) → ThemeMode
+            └─ MaterialApp.router(themeMode: ...)
+```
 
 ---
 
-## Step 14 — Run Code Generation
+## Step 15 — Set Up Web Support (WASM Files)
 
-Both Drift and Riverpod require generated code. Run:
+Drift requires WebAssembly files to run on web. Copy them from the drift package cache:
+
+```bash
+# From the project root
+copy "%LOCALAPPDATA%\Pub\Cache\hosted\pub.dev\drift-2.35.0\extension\devtools\build\sqlite3.wasm" web\sqlite3.wasm
+copy "%LOCALAPPDATA%\Pub\Cache\hosted\pub.dev\drift-2.35.0\drift_worker.js" web\drift_worker.js
+```
+
+Or on macOS/Linux:
+
+```bash
+cp ~/.pub-cache/hosted/pub.dev/drift-2.35.0/extension/devtools/build/sqlite3.wasm web/sqlite3.wasm
+cp ~/.pub-cache/hosted/pub.dev/drift-2.35.0/drift_worker.js web/drift_worker.js
+```
+
+### What these files do
+
+| File | Purpose |
+|------|---------|
+| `sqlite3.wasm` | Compiled SQLite running in WebAssembly — browser-native SQL engine |
+| `drift_worker.js` | Web Worker that runs database operations off the main thread |
+
+---
+
+## Step 16 — Run Code Generation
+
+Both Drift and Riverpod require generated code:
 
 ```bash
 dart run build_runner build --delete-conflicting-outputs
@@ -990,61 +1225,113 @@ dart run build_runner build --delete-conflicting-outputs
 
 This creates the `*.g.dart` files:
 
-- `app_database.g.dart` — Drift table classes, query builders, and data classes
-- `database_provider.g.dart` — Riverpod provider for the database
-- `settings_provider.g.dart` — Riverpod notifier for theme mode
+| File | Generator | Contents |
+|------|-----------|----------|
+| `app_database.g.dart` | `drift_dev` | Table classes, query builders, `Todo` data class, `TodosCompanion` |
+| `database_provider.g.dart` | `riverpod_generator` | `appDatabaseProvider` with `keepAlive` |
+| `settings_provider.g.dart` | `riverpod_generator` | `themeModeStateProvider` notifier class |
 
-Run this command again whenever you modify a file that uses `part '*.g.dart'` or `@riverpod` / `@Riverpod` annotations.
+Run this command again whenever you modify a file that uses `part '*.g.dart'` or `@riverpod` annotations.
 
 ---
 
-## Step 15 — Run the App
+## Step 17 — Run the App
 
 ```bash
+# Mobile/desktop
 flutter run
+
+# Web
+flutter run -d chrome
 ```
 
 ### Features to test
 
-1. **Add a todo** — tap the FAB, enter a title, tap "Add"
-2. **Toggle completion** — tap the checkbox on any todo
-3. **Edit a todo** — tap the three-dot menu, select "Edit"
-4. **Delete a todo** — tap the three-dot menu, select "Delete", confirm
-5. **Theme switching** — tap the settings icon, choose System/Light/Dark
-6. **Persistence** — kill and restart the app — todos and theme preference survive
+| # | Action | Expected Result |
+|---|--------|-----------------|
+| 1 | Tap the FAB (+) | Navigates to Add Todo screen |
+| 2 | Enter title, tap "Add" | Todo appears in the list |
+| 3 | Tap checkbox | Todo gets strikethrough, isCompleted toggles |
+| 4 | Tap three-dot menu → Edit | Navigates to Edit screen with pre-filled fields |
+| 5 | Tap three-dot menu → Delete | Confirmation dialog appears |
+| 6 | Confirm delete | Todo is removed from the list |
+| 7 | Tap settings icon | Navigates to Settings screen |
+| 8 | Select Light/Dark theme | App theme changes immediately |
+| 9 | Kill and restart the app | All todos and theme preference survive |
 
 ---
 
 ## Architecture Summary
 
 ```
-┌─────────────────────────────────────────────┐
-│                   UI Layer                   │
-│  TodoListScreen, AddEditTodoScreen,         │
-│  SettingsScreen, TodoTile                   │
-│  (ConsumerWidget / ConsumerStatefulWidget)  │
-└──────────────────┬──────────────────────────┘
-                   │ watches / reads
-┌──────────────────▼──────────────────────────┐
-│              Providers Layer                 │
-│  todoListProvider (StreamProvider)           │
-│  todoActionsProvider (Provider<TodoActions>) │
-│  themeModeStateProvider (Notifier)           │
-│  appDatabaseProvider (keepAlive)             │
-└──────────────────┬──────────────────────────┘
-                   │ delegates to
-┌──────────────────▼──────────────────────────┐
-│               Data Layer                     │
-│  AppDatabase (Drift)                         │
-│  SharedPreferences (theme persistence)      │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│                     UI Layer                         │
+│                                                     │
+│  TodoListScreen    AddEditTodoScreen    SettingsScreen│
+│  (ConsumerWidget)  (ConsumerStatefulW) (ConsumerW)  │
+│         │                  │                 │       │
+│         └──────────────────┼─────────────────┘       │
+│                            │                         │
+│                      TodoTile                        │
+│                    (StatelessWidget)                  │
+└────────────────────┬────────────────────────────────┘
+                     │ watches / reads
+┌────────────────────▼────────────────────────────────┐
+│                  Providers Layer                     │
+│                                                     │
+│  todoListProvider ──StreamProvider<List<Todo>>       │
+│       │                                              │
+│  todoActionsProvider ──Provider<TodoActions>         │
+│       │                                              │
+│  themeModeStateProvider ──Notifier<ThemeMode>        │
+│       │                                              │
+│  appDatabaseProvider ──Provider<AppDatabase>         │
+│       │              (keepAlive: true)               │
+└───────┬─────────────────────────────────────────────┘
+        │ delegates to
+┌───────▼─────────────────────────────────────────────┐
+│                   Data Layer                         │
+│                                                     │
+│  AppDatabase (Drift)                                 │
+│    └─ Todos table (SQLite / WASM on web)             │
+│                                                     │
+│  SharedPreferences                                  │
+│    └─ theme_mode key (int index)                     │
+└─────────────────────────────────────────────────────┘
 ```
 
-### Data flow
+### Data flow: Adding a todo
 
-- **Reading**: UI watches `todoListProvider` → streams from `AppDatabase.watchAllTodos()` → rebuilds on any DB change.
-- **Writing**: UI calls `ref.read(todoActionsProvider).addTodo(...)` → `AppDatabase.insertTodo(...)` → Drift emits new value on the stream → UI rebuilds.
-- **Theme**: UI calls `ref.read(themeModeStateProvider.notifier).setThemeMode(...)` → writes to `SharedPreferences` → updates Riverpod state → `MaterialApp.router` rebuilds with new theme.
+```
+User taps FAB
+  → context.push('/add')
+  → AddEditTodoScreen builds
+  → User fills form, taps "Add"
+  → _saveTodo() called
+  → ref.read(todoActionsProvider).addTodo(...)
+  → TodoActions.addTodo()
+  → _database.insertTodo(TodosCompanion(...))
+  → Drift inserts row into SQLite
+  → database.watchAllTodos() stream emits new list
+  → todoListProvider updates
+  → TodoListScreen rebuilds with new todo
+```
+
+### Data flow: Toggling completion
+
+```
+User taps checkbox
+  → onToggle callback fired
+  → actions.toggleCompleted(todo.id)
+  → TodoActions.toggleCompleted()
+  → _database.getTodoById(id)  // fetch current isCompleted
+  → _database.update(...).write(TodosCompanion(isCompleted: !todo.isCompleted))
+  → Drift updates the row
+  → database.watchAllTodos() stream emits new list
+  → todoListProvider updates
+  → TodoListScreen rebuilds
+  → TodoTile shows strikethrough style
+```
 
 ---
 
@@ -1058,13 +1345,63 @@ Run code generation:
 dart run build_runner build --delete-conflicting-outputs
 ```
 
-### "The method 'int.parse' threw an exception"
+### "A message on the flutter/lifecycle channel was discarded"
 
-This was fixed with `int.tryParse`. If you see this in your own routes, always use `int.tryParse` and handle the `null` case.
+This happens when `SharedPreferences` initializes before the framework is ready. The fix is already in `main.dart`:
+
+```dart
+await Future<void>.delayed(Duration.zero);
+final prefs = await SharedPreferences.getInstance();
+```
+
+`Duration.zero` defers initialization to the next microtask, giving the framework time to register its lifecycle listener.
+
+### "When compiling to the web, the 'web' parameter needs to be set"
+
+Drift needs WASM files for web support. See [Step 15](#step-15--set-up-web-support-wasm-files).
+
+### "TodosCompanion cannot be used for that because title: This value was required, but isn't present"
+
+This happens when using `replace()` with incomplete data. Use `write()` instead for partial updates:
+
+```dart
+// WRONG — replace() requires all non-nullable columns
+await _database.updateTodo(
+  TodosCompanion(
+    id: Value(id),
+    isCompleted: Value(!todo.isCompleted),
+  ),
+);
+
+// CORRECT — write() only updates specified columns
+await (_database.update(_database.todos)
+      ..where((t) => t.id.equals(id)))
+    .write(
+  TodosCompanion(
+    isCompleted: Value(!todo.isCompleted),
+  ),
+);
+```
+
+### Theme not persisting
+
+Ensure `SharedPreferences` is initialized **before** `runApp` and injected via `ProviderScope`:
+
+```dart
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Future<void>.delayed(Duration.zero);
+  final prefs = await SharedPreferences.getInstance();
+  runApp(ProviderScope(
+    overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    child: const TodoApp(),
+  ));
+}
+```
 
 ### Database not resetting after schema change
 
-Bump `schemaVersion` in `AppDatabase` and add a migration strategy:
+Bump `schemaVersion` in `AppDatabase` and add a migration:
 
 ```dart
 @override
@@ -1074,33 +1411,23 @@ int get schemaVersion => 2;
 MigrationStrategy get migration => MigrationStrategy(
   onCreate: (m) => m.createAll(),
   onUpgrade: (m, from, to) async {
-    // Write migration logic here
+    if (from == 1 && to == 2) {
+      await m.addColumn(todos, todos.priority);
+    }
   },
 );
-```
-
-### Theme not persisting
-
-Ensure `SharedPreferences` is initialized **before** `runApp`:
-
-```dart
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  final prefs = await SharedPreferences.getInstance();
-  runApp(ProviderScope(
-    overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
-    child: const TodoApp(),
-  ));
-}
 ```
 
 ---
 
 ## Next Steps
 
-- **Add categories/tags** — extend the `Todos` table with a `category` column
-- **Add search/filter** — use Drift's `where` clauses with a search query provider
-- **Add due dates** — add a `DateTimeColumn` and sort by deadline
-- **Add drag-to-reorder** — use `ReorderableListView` with an `order` column
-- **Write tests** — test `TodoActions`, the database CRUD, and widget rendering
-- **Add animations** — use `AnimatedList` for smooth add/remove transitions
+| Feature | How to implement |
+|---------|------------------|
+| **Categories/tags** | Add a `TextColumn get category => text()()` to `Todos` table, filter with `where((t) => t.category.equals(...))` |
+| **Search** | Add a `StreamProvider` with a query string parameter, use Drift's `like()` for partial matching |
+| **Due dates** | Add `DateTimeColumn get dueDate => dateTime().nullable()()`, sort with `orderBy([(t) => OrderingTerm.asc(t.dueDate)])` |
+| **Drag-to-reorder** | Add `IntColumn get sortIndex => integer().withDefault(const Constant(0))()`, use `ReorderableListView` |
+| **Priority levels** | Create an `IntColumn get priority => integer().withDefault(const Constant(0))()`, filter/sort by priority |
+| **Unit tests** | Test `TodoActions` methods with an in-memory database, test widgets with `MockAppDatabase` |
+| **Animations** | Use `AnimatedList` for smooth add/remove transitions, `Hero` for shared element transitions |
