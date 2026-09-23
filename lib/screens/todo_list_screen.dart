@@ -18,6 +18,7 @@ class TodoListScreen extends ConsumerWidget {
         centerTitle: true,
         actions: [
           IconButton(
+            key: const ValueKey('settings_icon_button'),
             icon: const Icon(Icons.settings),
             onPressed: () => context.push('/settings'),
           ),
@@ -37,6 +38,7 @@ class TodoListScreen extends ConsumerWidget {
             );
           }
           return ListView.separated(
+            key: const ValueKey('todo_list_view'),
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: todos.length,
             separatorBuilder: (_, _) => const Divider(height: 1),
@@ -54,6 +56,7 @@ class TodoListScreen extends ConsumerWidget {
         },
       ),
       floatingActionButton: FloatingActionButton(
+        key: const ValueKey('add_todo_fab'),
         onPressed: () => context.push('/add'),
         tooltip: 'Add Todo',
         child: const Icon(Icons.add),

@@ -32,9 +32,9 @@ class TodoActions {
     required String title,
     String? description,
   }) async {
-    await (_database.update(_database.todos)
-          ..where((t) => t.id.equals(id)))
-        .write(
+    await (_database.update(
+      _database.todos,
+    )..where((t) => t.id.equals(id))).write(
       TodosCompanion(
         title: Value(title),
         description: Value(description),
@@ -45,9 +45,9 @@ class TodoActions {
 
   Future<void> toggleCompleted(int id) async {
     final todo = await _database.getTodoById(id);
-    await (_database.update(_database.todos)
-          ..where((t) => t.id.equals(id)))
-        .write(
+    await (_database.update(
+      _database.todos,
+    )..where((t) => t.id.equals(id))).write(
       TodosCompanion(
         isCompleted: Value(!todo.isCompleted),
         updatedAt: Value(DateTime.now()),

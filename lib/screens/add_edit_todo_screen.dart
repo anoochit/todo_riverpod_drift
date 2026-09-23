@@ -99,6 +99,7 @@ class _AddEditTodoScreenState extends ConsumerState<AddEditTodoScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               TextFormField(
+                key: const ValueKey('todo_title_input'),
                 controller: _titleController,
                 decoration: const InputDecoration(
                   labelText: 'Title',
@@ -115,6 +116,7 @@ class _AddEditTodoScreenState extends ConsumerState<AddEditTodoScreen> {
               ),
               const SizedBox(height: 16),
               TextFormField(
+                key: const ValueKey('todo_description_input'),
                 controller: _descriptionController,
                 decoration: const InputDecoration(
                   labelText: 'Description (optional)',
@@ -127,6 +129,7 @@ class _AddEditTodoScreenState extends ConsumerState<AddEditTodoScreen> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
+                key: const ValueKey('save_todo_button'),
                 onPressed: _isLoading ? null : _saveTodo,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
