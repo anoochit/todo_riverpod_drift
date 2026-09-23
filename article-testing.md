@@ -30,6 +30,7 @@ flowchart TD
 Unit and component tests verify individual layers in isolation without requiring physical devices or desktop application instances.
 
 ### 1.1 Database Tests (`test/database/app_database_test.dart`)
+
 - **Isolation**: Uses `AppDatabase.forTesting(NativeDatabase.memory())` to run SQLite completely in-memory.
 - **Coverage**:
   - **CRUD**: Validates `insertTodo`, `getTodoById`, `updateTodo` (replace), and `deleteTodo`.
@@ -37,6 +38,7 @@ Unit and component tests verify individual layers in isolation without requiring
   - **Schema Constraints**: Tests title length boundary rules (rejects empty string `""` and titles `> 200` characters, accepts `200` characters).
 
 ### 1.2 Provider Actions Tests (`test/providers/todo_actions_test.dart`)
+
 - **Isolation**: Evaluates `TodoActions` using a `ProviderContainer` with `appDatabaseProvider` overridden by an in-memory DB instance.
 - **Coverage**:
   - `addTodo`: Verifies creation with default `isCompleted = false` and generated timestamps.
@@ -45,6 +47,7 @@ Unit and component tests verify individual layers in isolation without requiring
   - `deleteTodo`: Tests row removal and idempotency for non-existent IDs.
 
 ### 1.3 Settings Provider Tests (`test/providers/settings_provider_test.dart`)
+
 - **Isolation**: Uses `SharedPreferences.setMockInitialValues({})` and overrides `sharedPreferencesProvider`.
 - **Coverage**:
   - Defaulting to `ThemeMode.system` when unset.
@@ -52,12 +55,14 @@ Unit and component tests verify individual layers in isolation without requiring
   - Persistence round-tripping across `ProviderContainer` teardown and rebuild for all `ThemeMode` enum options (`system`, `light`, `dark`).
 
 ### 1.4 Todo List Provider Tests (`test/providers/todo_list_provider_test.dart`)
+
 - **Isolation**: Subscribes to `todoListProvider` stream using `ProviderContainer.listen`.
 - **Coverage**:
   - Initial `AsyncValue.data([])` emission.
   - Stream reactivity upon database operations (`addTodo`, `toggleCompleted`, `deleteTodo`).
 
 ### 1.5 Router Tests (`test/router/app_router_test.dart`)
+
 - **Isolation**: Mounts `TodoApp` with GoRouter within widget test framework.
 - **Coverage**:
   - `/` loads `TodoListScreen`.
@@ -73,6 +78,7 @@ Unit and component tests verify individual layers in isolation without requiring
 E2E tests simulate user interaction across the entire stack using `integration_test` and `test_driver`.
 
 ### 2.1 Test Driver Configuration (`test_driver/integration_test.dart`)
+
 Exposes the standard entry point required by `flutter drive`:
 
 ```dart
@@ -82,10 +88,11 @@ Future<void> main() => integrationDriver();
 ```
 
 ### 2.2 E2E Test Suite (`integration_test/todo_app_test.dart`)
+
 Contains 9 automated scenarios verifying full user journeys:
 
 | # | Scenario | Verification |
-|---|---|---|
+| --- | --- | --- |
 | 1 | Empty State | Verifies `"No todos yet"` placeholder on initial launch. |
 | 2 | Add Todo | Taps FAB ➔ fills title/description ➔ taps Add ➔ verifies card on home screen. |
 | 3 | Form Validation | Taps Add on empty form ➔ verifies error text `"Please enter a title"` and prevents navigation. |
@@ -140,6 +147,7 @@ flowchart LR
 ## 4. How to Run & Verify Tests
 
 ### 4.1 Static Analysis & Formatting Checks
+
 Run these commands after making changes to verify code formatting and static analysis rules:
 
 ```bash
@@ -151,6 +159,7 @@ dart format --output=none --set-exit-if-changed lib/ test/ integration_test/ tes
 ```
 
 ### 4.2 Running Unit & Widget Tests
+
 Execute all unit and widget tests headlessly:
 
 ```bash
@@ -158,6 +167,7 @@ flutter test
 ```
 
 To run a specific test file:
+
 ```bash
 flutter test test/database/app_database_test.dart
 ```
@@ -165,6 +175,7 @@ flutter test test/database/app_database_test.dart
 ### 4.3 Running E2E Integration Tests
 
 #### Option A: Running via `flutter test` (Widget/Target Mode)
+
 You can run integration tests directly against your desktop platform target (e.g., Windows):
 
 ```bash
@@ -172,6 +183,7 @@ flutter test -d windows integration_test/todo_app_test.dart
 ```
 
 #### Option B: Running via `flutter drive` (Full Flutter Driver Mode)
+
 To run via the `test_driver` integration runner:
 
 ```bash
