@@ -10,7 +10,7 @@ The `todo_riverpod` application follows a multi-layered testing strategy:
 
 ```mermaid
 flowchart TD
-    subgraph Unit & Integration Tests (test/)
+    subgraph "Unit & Integration Tests (test/)"
         DB[Database Layer Tests] -->|In-memory SQLite| AppDB[AppDatabase]
         Actions[TodoActions Tests] -->|ProviderContainer Override| DB
         State[ThemeModeState Tests] -->|Mocked SharedPreferences| Settings[SettingsProvider]
@@ -18,7 +18,7 @@ flowchart TD
         Router[AppRouter Tests] -->|GoRouter Navigation| RouterView[Screen Widgets]
     end
 
-    subgraph E2E Tests (integration_test/ & test_driver/)
+    subgraph "E2E Tests (integration_test/ & test_driver/)"
         E2E[todo_app_test.dart] -->|WidgetTester & Driver| App[Full App Workflow]
     end
 ```
@@ -105,42 +105,143 @@ Contains 9 automated scenarios verifying full user journeys:
 
 ---
 
-## 3. Using Agent Skill `flutter-add-integration-test` for Agentic Coding
+## 3. Agentic Testing Workflows: Using Coding Agents & Flutter Skills
 
-The project includes the [`flutter-add-integration-test`](file:///D:/live/todo_riverpod/.agents/skills/flutter-add-integration-test/SKILL.md) Agent Skill. This skill defines a structured, agentic workflow for exploring the UI via MCP, authoring integration tests, and diagnosing execution failures.
+AI coding agents (like `opencode`) leverage structured agent skills and MCP tools to autonomously analyze codebases, generate unit/widget test suites, and author E2E integration tests.
+
+### 3.1 Overview of Flutter Testing Agent Skills
+
+The codebase includes specialized Flutter agent skills in `.agents/skills/`:
+
+| Agent Skill | Purpose & Usage |
+| --- | --- |
+| `dart-add-unit-test` | Creates unit tests for Dart functions, Drift database models, and Riverpod state logic using `package:test` / `flutter_test`. |
+| `flutter-add-widget-test` | Authors component-level widget tests using `WidgetTester` to verify UI rendering, layout, and user interactions. |
+| `dart-generate-test-mocks` | Generates type-safe mock objects using `package:mockito` and `build_runner` for external services or dependencies. |
+| `flutter-add-integration-test` | Explores live UI via Flutter MCP, verifies widget trees, and synthesizes complete E2E integration tests. |
+| `dart-run-static-analysis` | Executes `dart analyze` and applies mechanical fixes via `dart fix --apply`. |
+
+---
+
+### 3.2 Using a Coding Agent to Create Unit & Widget Test Cases
+
+When instructed to create unit or widget test cases for a new or existing feature, the coding agent follows a structured workflow:
 
 ```mermaid
-flowchart LR
-    A[1. Setup Dependencies] --> B[2. MCP Exploration]
-    B --> C[3. Test Authoring]
-    C --> D[4. Execution & Feedback Loop]
-    D -->|Failure / Timeout| C
-    D -->|Pass| E[Complete]
+flowchart TD
+    A[Analyze Source Code & Dependencies] --> B[Identify Test Isolation Strategy]
+    B --> C[Generate Mocks if needed]
+    C --> D[Invoke dart-add-unit-test or flutter-add-widget-test Skill]
+    D --> E[Write Test Suite in test/]
+    E --> F[Run flutter test & dart analyze Verification Loop]
 ```
 
-### 3.1 Workflow Steps for AI Agents & Developers
+1. **Code Analysis & Context Gathering**:
+   - The agent inspects the target source file (e.g., database DAO, Riverpod provider, or screen widget) using `read` and `grep`.
+   - It identifies key edge cases, validation logic, state changes, and expected stream emissions.
 
-1. **Setup Dependencies & Keys**:
-   - Verify `integration_test` and `flutter_test` are present in `pubspec.yaml`.
-   - Add `ValueKey` identifiers to target widgets (e.g., `ValueKey('add_todo_fab')`) for unambiguous locator matching.
-   - If using Flutter Driver extensions, invoke `enableFlutterDriverExtension()` in `lib/main_test.dart`.
+2. **Selecting the Isolation Strategy**:
+   - **Database**: Uses `AppDatabase.forTesting(NativeDatabase.memory())` for zero-side-effect SQLite operations.
+   - **Riverpod Providers**: Instantiates a `ProviderContainer` with overridden dependencies (e.g., overriding `appDatabaseProvider` or `sharedPreferencesProvider`).
+   - **Widget Components**: Wraps widgets in `MaterialApp` or Riverpod `ProviderScope` within `tester.pumpWidget()`.
 
-2. **Interactive UI Exploration via Dart/Flutter MCP**:
-   - Launch app instance with `launch_app` to retrieve Dart Tooling Daemon (DTD) URI.
-   - Map widget hierarchy with `get_widget_tree` to discover keys, types, and labels.
-   - Test interaction steps live using MCP tools (`tap`, `enter_text`, `scroll`).
+3. **Generating Test Cases**:
+   - Applies the `dart-add-unit-test` skill to format assertions, group test cases logically with `group()`, and handle async streams or futures.
+   - Applies the `flutter-add-widget-test` skill to locate widgets via `find.byKey`, `find.byType`, or `find.text`, simulate gestures (`tester.tap`, `tester.enterText`), and rebuild the tree using `tester.pumpAndSettle()`.
 
-3. **Authoring Test Files**:
-   - Place tests under `integration_test/<feature>_test.dart`.
-   - Call `IntegrationTestWidgetsFlutterBinding.ensureInitialized()` at the top of `main()`.
-   - Use `WidgetTester` APIs (`tester.pumpWidget`, `tester.tap`, `tester.enterText`, `tester.pumpAndSettle`).
+4. **Self-Verification & Refinement**:
+   - Runs `flutter test test/<file>_test.dart` to verify pass status.
+   - Runs `dart analyze lib/ test/` to verify zero static analysis errors.
 
-4. **Execution & Feedback Loop**:
-   - Run tests using `flutter test -d windows integration_test/<feature>_test.dart` or `flutter drive`.
-   - **Error Recovery**:
-     - *`PumpAndSettleTimedOutException`*: Check for un-ended animations or repeating timers (`CircularProgressIndicator`).
-     - *Widget not found*: Use `tester.scrollUntilVisible` for items inside `ListView` or `SliverList`.
-     - *Stale database state*: Add a `resetState()` setup hook to clear database tables and `SharedPreferences` between test runs.
+---
+
+### 3.3 Creating Integration Tests with `flutter-add-integration-test` Skill
+
+The [`flutter-add-integration-test`](https://github.com/anoochit/todo_riverpod_drift/blob/main/.agents/skills/flutter-add-integration-test/SKILL.md) skill guides agents through interactive UI exploration and test generation across 4 key phases:
+
+```mermaid
+flowchart TB
+    A[1. App Setup & Widget Keys] --> B[2. MCP UI Exploration]
+    B --> C[3. Test Synthesis]
+    C --> D[4. Execution & Feedback Loop]
+    D -->|Failure / Timeout| C
+    D -->|Pass| E[Verification Complete]
+```
+
+#### Phase 1: App Setup & Key Assignment
+- The agent ensures `integration_test` and `flutter_test` dependencies are present in `pubspec.yaml`.
+- The agent assigns unique `ValueKey` identifiers to target interactive elements (e.g., `ValueKey('add_todo_fab')`, `ValueKey('todo_title_input')`).
+- If required, the agent enables `enableFlutterDriverExtension()` in `lib/main_test.dart`.
+
+#### Phase 2: Interactive Exploration via Dart/Flutter MCP
+- The agent launches the app using `launch_app` to retrieve the Dart Tooling Daemon (DTD) connection URI.
+- It inspects the live widget tree with `get_widget_tree` to map visible keys, widget types, and semantic labels.
+- It tests live interaction sequences (`tap`, `enter_text`, `scroll`) using MCP tools to confirm user flow paths before writing code.
+
+#### Phase 3: Synthesizing Integration Test Suites
+- The agent creates or updates test scripts under `integration_test/<feature>_test.dart`.
+- Structure template synthesized by agent:
+  ```dart
+  import 'package:flutter/material.dart';
+  import 'package:flutter_test/flutter_test.dart';
+  import 'package:integration_test/integration_test.dart';
+  import 'package:todo_riverpod/main.dart' as app;
+
+  void main() {
+    IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+    group('E2E Feature Test', () {
+      testWidgets('Complete user workflow', (WidgetTester tester) async {
+        app.main();
+        await tester.pumpAndSettle();
+
+        // 1. Interact with UI
+        final fab = find.byKey(const ValueKey('add_todo_fab'));
+        await tester.tap(fab);
+        await tester.pumpAndSettle();
+
+        // 2. Form input
+        await tester.enterText(find.byKey(const ValueKey('title_input')), 'New Task');
+        await tester.tap(find.byKey(const ValueKey('save_button')));
+        await tester.pumpAndSettle();
+
+        // 3. Verify outcome
+        expect(find.text('New Task'), findsOneWidget);
+      });
+    });
+  }
+  ```
+- Also creates the companion host driver script at `test_driver/integration_test.dart`:
+  ```dart
+  import 'package:integration_test/integration_test_driver.dart';
+
+  Future<void> main() => integrationDriver();
+  ```
+
+#### Phase 4: Execution & Feedback Loop
+- The agent executes tests using desktop or driver target modes:
+  ```bash
+  flutter test -d windows integration_test/todo_app_test.dart
+  ```
+- **Error Recovery Strategies Applied by Agent**:
+  - *`PumpAndSettleTimedOutException`*: Replace `pumpAndSettle()` with discrete `pump(Duration(...))` calls if infinite progress indicators or repeating timers exist.
+  - *`StateError / Bad state: No element`*: Ensure off-screen list items are scrolled into view with `tester.scrollUntilVisible()`.
+  - *Stale database state*: Inject test tearDown/setUp database reset hooks.
+
+---
+
+### 3.4 Example Prompts to Direct the Coding Agent
+
+Below are practical prompts you can use to instruct a coding agent to build test cases using these skills:
+
+#### Prompt 1: Generate Unit Tests for a Riverpod Provider
+> "Use the `dart-add-unit-test` skill to write comprehensive unit tests for `TodoActions` provider in `test/providers/todo_actions_test.dart`. Test adding, editing, toggling completion status, and deleting todos using an in-memory Drift database."
+
+#### Prompt 2: Generate Widget Tests for a UI Component
+> "Use the `flutter-add-widget-test` skill to create widget tests for `AddEditTodoScreen` in `test/screens/add_edit_todo_screen_test.dart`. Test form validation when title is empty, pre-filling text fields during edit mode, and tapping the save button."
+
+#### Prompt 3: Create an E2E Integration Test using `flutter-add-integration-test`
+> "Use the `flutter-add-integration-test` skill to explore the app via Flutter MCP tools and create an E2E integration test in `integration_test/settings_theme_test.dart`. Test navigating to settings, changing theme mode to Dark, and asserting that theme state persists after relaunching."
 
 ---
 
