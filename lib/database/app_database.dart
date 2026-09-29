@@ -1,7 +1,13 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 part 'app_database.g.dart';
+
+const String _databaseName = 'todo_database';
 
 class Todos extends Table {
   IntColumn get id => integer().autoIncrement()();
@@ -23,13 +29,36 @@ class AppDatabase extends _$AppDatabase {
 
   static QueryExecutor _openConnection() {
     return driftDatabase(
-      name: 'todo_database',
-      native: const DriftNativeOptions(),
-      // web: DriftWebOptions(
-      //   sqlite3Wasm: Uri.parse('sqlite3.wasm'),
-      //   driftWorker: Uri.parse('drift_worker.js'),
-      // ),
+      name: _databaseName,
+      native: const DriftNativeOptions(
+        databaseDirectory: _resolveDatabaseDirectory,
+      ),
+      web: DriftWebOptions(
+        sqlite3Wasm: Uri.parse('sqlite3.wasm'),
+        driftWorker: Uri.parse('drift_worker.js'),
+      ),
     );
+  }
+
+  static Future<Directory> _resolveDatabaseDirectory() async {
+    final directory = await getApplicationSupportDirectory();
+    await _migrateLegacyDatabase(directory);
+    return directory;
+  }
+
+  static Future<void> _migrateLegacyDatabase(Directory target) async {
+    try {
+      final destination = File(p.join(target.path, '$_databaseName.sqlite'));
+      if (await destination.exists()) return;
+
+      final documents = await getApplicationDocumentsDirectory();
+      final legacy = File(p.join(documents.path, '$_databaseName.sqlite'));
+      if (await legacy.exists()) {
+        await legacy.copy(destination.path);
+      }
+    } catch (_) {
+      // Legacy file may be unreadable, e.g. an offline OneDrive placeholder.
+    }
   }
 
   Future<List<Todo>> allTodos() => select(todos).get();
