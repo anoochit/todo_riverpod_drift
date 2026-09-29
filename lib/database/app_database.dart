@@ -25,10 +25,10 @@ class AppDatabase extends _$AppDatabase {
     return driftDatabase(
       name: 'todo_database',
       native: const DriftNativeOptions(),
-      web: DriftWebOptions(
-        sqlite3Wasm: Uri.parse('sqlite3.wasm'),
-        driftWorker: Uri.parse('drift_worker.js'),
-      ),
+      // web: DriftWebOptions(
+      //   sqlite3Wasm: Uri.parse('sqlite3.wasm'),
+      //   driftWorker: Uri.parse('drift_worker.js'),
+      // ),
     );
   }
 
